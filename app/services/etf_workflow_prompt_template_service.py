@@ -4,8 +4,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
-from app.core.database import get_mongo_db
-
 logger = logging.getLogger(__name__)
 
 ETF_WORKFLOW_ID = "v2_etf_analysis"
@@ -111,6 +109,8 @@ class EtfWorkflowPromptTemplateService:
     """确保 ETF 工作流专属系统提示词模板存在。"""
 
     def __init__(self):
+        from app.core.database import get_mongo_db
+
         self.db = get_mongo_db()
         self.collection = self.db.prompt_templates
 
