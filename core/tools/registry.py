@@ -43,7 +43,7 @@ class ToolRegistry:
     _instance = None
     _lock = threading.Lock()
     
-    def __new__(cls):
+    def __new__(cls, *, discover=True):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
@@ -51,7 +51,7 @@ class ToolRegistry:
                     cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self):
+    def __init__(self, *, discover=True):
         if not self._initialized:
             self._tools: Dict[str, ToolMetadata] = {}
             self._functions: Dict[str, Callable] = {}  # 存储实际函数实现
@@ -61,7 +61,8 @@ class ToolRegistry:
             # ToolRegistry() → __init__ → _initialized 还是 False → 重新进入
             # load_all() → 无界递归（RecursionError）。
             self._initialized = True
-            self._load_tool_implementations()  # 自动加载工具实现
+            if discover:
+                self._load_tool_implementations()
 
     def _load_builtin_tools(self) -> None:
         """加载内置工具元数据"""

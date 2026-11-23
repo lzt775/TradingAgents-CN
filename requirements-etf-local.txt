@@ -1,0 +1,13 @@
+# ETF research CLI and the upstream graph, registered tools and China data providers
+langgraph>=0.4.8,<1
+langchain-core>=0.3.72,<1
+stockstats>=0.6.5
+pandas>=2.3
+requests>=2.32
+python-dotenv>=1
+akshare>=1.17.86
+baostock>=0.8.8
+tushare>=1.4.21
+toml>=0.10
+concurrent-log-handler>=0.9.24
+pymongo>=4.6

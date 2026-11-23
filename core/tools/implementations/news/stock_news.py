@@ -1554,6 +1554,12 @@ def _build_us_news_bundle(ticker: str, curr_date: str, limit: int = 20) -> Dict[
 
 def _build_stock_news_bundle(ticker: str, curr_date: str, limit: int = 20) -> Dict[str, Any]:
     """按市场构建统一新闻候选集。"""
+    from core.tools.context import research_snapshot
+    snapshot = research_snapshot.get()
+    if snapshot is not None:
+        items = _merge_news_items_by_title(snapshot["news"], limit=limit)
+        return {"items": _annotate_headline_items(items, limit), "market_name": "ETF 研究窗口",
+                "analysis_date": curr_date, "start_date": snapshot["start"], "end_date": curr_date}
     from tradingagents.utils.stock_utils import StockUtils
 
     market_info = StockUtils.get_market_info(ticker)

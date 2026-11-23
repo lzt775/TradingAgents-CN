@@ -103,7 +103,7 @@ def _get_etf_full_symbol(symbol: str) -> str:
     code = _normalize_etf_symbol(symbol)
     if not code or len(code) != 6:
         return ""
-    if code.startswith(("50", "51", "52")):
+    if code.startswith(("50", "51", "52", "56", "58")):
         return f"{code}.SH"
     if code.startswith(("15", "16")):
         return f"{code}.SZ"
@@ -444,8 +444,13 @@ def get_etf_fundamentals(
     if not code or len(code) != 6:
         return f"❌ 无效的 ETF 代码: {ticker}，请输入 6 位数字（如 510050、159919）"
 
-    if not (code.startswith(("50", "51", "52")) or code.startswith(("15", "16"))):
-        return f"❌ {ticker} 不是 ETF 代码。ETF 代码通常为 50/51/52 开头（沪市）或 15/16 开头（深市）"
+    if not (code.startswith(("50", "51", "52", "56", "58")) or code.startswith(("15", "16"))):
+        return f"❌ {ticker} 不是 ETF 代码。ETF 代码通常为 50/51/52/56/58 开头（沪市）或 15/16 开头（深市）"
+
+    from core.tools.context import research_snapshot
+    snapshot = research_snapshot.get()
+    if snapshot is not None:
+        return format_etf_snapshot(ticker, curr_date, snapshot["spot"], snapshot["history"])
 
     source_priority = _get_etf_source_priority()
     online_sources = [source for source in source_priority if source in ETF_SUPPORTED_ONLINE_SOURCES]
@@ -511,6 +516,10 @@ def get_etf_fundamentals(
         spot = _merge_missing_fields(spot, enrichment_spot)
         logger.info(f"📊 [ETF 基本面] 本地数据补充来源: {enrichment_source}")
 
+    return format_etf_snapshot(ticker, curr_date, spot, hist)
+
+
+def format_etf_snapshot(ticker, curr_date, spot, hist):
     lines = [
         f"# {ticker} ETF 基本面分析数据",
         f"**分析日期**: {curr_date or datetime.now().strftime('%Y-%m-%d')}",

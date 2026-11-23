@@ -190,3 +190,7 @@ def clear_latest_nanobot_intent() -> None:
     thread_id = _current_assistant_thread_id.get() or "unknown"
     _nanobot_intents_by_thread.pop(thread_id, None)
 
+
+
+# Optional frozen inputs for historical research; ordinary platform calls use their providers.
+research_snapshot = contextvars.ContextVar("research_snapshot", default=None)

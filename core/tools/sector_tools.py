@@ -1121,6 +1121,7 @@ async def get_sector_daily(
 
         # 最新一日
         latest = daily_df.iloc[-1]
+        lines.append(f"实际行情日: {latest['trade_date']}")
         lines.append("【最新行情】")
         lines.append(f"  • 收盘: {latest.get('close', 'N/A')}")
         lines.append(f"  • 涨跌幅: {latest.get('pct_change', 0):+.2f}%")

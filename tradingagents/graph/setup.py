@@ -2,7 +2,7 @@
 
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, StateGraph, START
+from tradingagents.research_graph import build_research_graph
 from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents import *
@@ -256,110 +256,14 @@ class GraphSetup:
             self.deep_thinking_llm, self.risk_manager_memory
         )
 
-        # Create workflow
-        workflow = StateGraph(AgentState)
-
-        # Add analyst nodes to the graph
-        for analyst_type, node in analyst_nodes.items():
-            display_name = self._get_analyst_display_name(analyst_type)
-            workflow.add_node(f"{display_name} Analyst", node)
-            workflow.add_node(
-                f"Msg Clear {display_name}", delete_nodes[analyst_type]
-            )
-            # 只为需要工具的分析师添加工具节点（扩展分析师在 _no_tool_analysts 中）
-            if analyst_type not in self._no_tool_analysts:
-                workflow.add_node(f"tools_{analyst_type}", tool_nodes[analyst_type])
-
-        # Add other nodes
-        workflow.add_node("Bull Researcher", bull_researcher_node)
-        workflow.add_node("Bear Researcher", bear_researcher_node)
-        workflow.add_node("Research Manager", research_manager_node)
-        workflow.add_node("Trader", trader_node)
-        workflow.add_node("Risky Analyst", risky_analyst)
-        workflow.add_node("Neutral Analyst", neutral_analyst)
-        workflow.add_node("Safe Analyst", safe_analyst)
-        workflow.add_node("Risk Judge", risk_manager_node)
-
-        # Define edges
-        # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        first_display_name = self._get_analyst_display_name(first_analyst)
-        workflow.add_edge(START, f"{first_display_name} Analyst")
-
-        # Connect analysts in sequence
-        for i, analyst_type in enumerate(selected_analysts):
-            display_name = self._get_analyst_display_name(analyst_type)
-            current_analyst = f"{display_name} Analyst"
-            current_tools = f"tools_{analyst_type}"
-            current_clear = f"Msg Clear {display_name}"
-
-            # 无工具调用的分析师直接连接到下一步（扩展分析师在 _no_tool_analysts 中）
-            if analyst_type in self._no_tool_analysts:
-                # 直接从分析师连接到消息清理节点
-                workflow.add_edge(current_analyst, current_clear)
-            else:
-                # 有工具调用的分析师使用条件边
-                workflow.add_conditional_edges(
-                    current_analyst,
-                    getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
-                    [current_tools, current_clear],
-                )
-                workflow.add_edge(current_tools, current_analyst)
-
-            # Connect to next analyst or to Bull Researcher if this is the last analyst
-            if i < len(selected_analysts) - 1:
-                next_analyst_type = selected_analysts[i+1]
-                next_display_name = self._get_analyst_display_name(next_analyst_type)
-                next_analyst = f"{next_display_name} Analyst"
-                workflow.add_edge(current_clear, next_analyst)
-            else:
-                workflow.add_edge(current_clear, "Bull Researcher")
-
-        # Add remaining edges
-        workflow.add_conditional_edges(
-            "Bull Researcher",
-            self.conditional_logic.should_continue_debate,
-            {
-                "Bear Researcher": "Bear Researcher",
-                "Research Manager": "Research Manager",
-            },
+        return build_research_graph(
+            AgentState, selected_analysts, analyst_nodes, delete_nodes, tool_nodes,
+            self._get_analyst_display_name,
+            {key: getattr(self.conditional_logic, f"should_continue_{key}")
+             for key in tool_nodes},
+            {"Bull Researcher": bull_researcher_node, "Bear Researcher": bear_researcher_node,
+             "Research Manager": research_manager_node, "Trader": trader_node,
+             "Risky Analyst": risky_analyst, "Neutral Analyst": neutral_analyst,
+             "Safe Analyst": safe_analyst, "Risk Judge": risk_manager_node},
+            self.conditional_logic,
         )
-        workflow.add_conditional_edges(
-            "Bear Researcher",
-            self.conditional_logic.should_continue_debate,
-            {
-                "Bull Researcher": "Bull Researcher",
-                "Research Manager": "Research Manager",
-            },
-        )
-        workflow.add_edge("Research Manager", "Trader")
-        workflow.add_edge("Trader", "Risky Analyst")
-        workflow.add_conditional_edges(
-            "Risky Analyst",
-            self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Safe Analyst": "Safe Analyst",
-                "Risk Judge": "Risk Judge",
-            },
-        )
-        workflow.add_conditional_edges(
-            "Safe Analyst",
-            self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Neutral Analyst": "Neutral Analyst",
-                "Risk Judge": "Risk Judge",
-            },
-        )
-        workflow.add_conditional_edges(
-            "Neutral Analyst",
-            self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Risky Analyst": "Risky Analyst",
-                "Risk Judge": "Risk Judge",
-            },
-        )
-
-        workflow.add_edge("Risk Judge", END)
-
-        # Compile and return
-        return workflow.compile()

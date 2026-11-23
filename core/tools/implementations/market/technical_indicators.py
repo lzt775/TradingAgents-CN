@@ -13,7 +13,6 @@ from langchain_core.tools import tool
 from datetime import datetime, timedelta
 
 from core.tools.base import register_tool
-from tradingagents.utils.stock_utils import StockUtils
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +63,17 @@ def get_technical_indicators(
     
     logger.info(f"📈 [技术指标] 分析股票: {ticker} ({start_date} -> {end_date})")
     
+    from core.tools.context import research_snapshot
+    snapshot = research_snapshot.get()
+    if snapshot is not None:
+        rows = snapshot["history"]
+        if not rows:
+            return "缺少截止日以前的行情。"
+        return format_technical_indicators(pd.DataFrame(rows), ticker, indicators, start_date, end_date)
+
     try:
         # 3. 识别市场
+        from tradingagents.utils.stock_utils import StockUtils
         market_info = StockUtils.get_market_info(ticker)
         is_china = market_info['is_china']
         is_hk = market_info['is_hk']
@@ -138,77 +146,81 @@ def get_technical_indicators(
         if df is None or df.empty:
             return f"❌ 无法获取股票 {ticker} 的历史数据，无法计算技术指标。"
             
-        # 6. 计算指标 (使用 stockstats)
-        from stockstats import wrap
-        
-        # 确保列名符合 stockstats 要求 (open, high, low, close, volume)
-        # 我们的 get_daily_data 应该已经标准化了列名，但为了保险再次检查
-        df.columns = [c.lower() for c in df.columns]
-        
-        # stockstats 需要 Date 列作为索引或列? 
-        # wrap() 通常接受 DataFrame
-        stock = wrap(df)
-        
-        indicator_list = [i.strip() for i in indicators.split(',')]
-        
-        # 扩展简写指标
-        expanded_list = []
-        for ind in indicator_list:
-            if ind.lower() == 'kdj':
-                expanded_list.extend(['kdjk', 'kdjd', 'kdjj'])
-            else:
-                expanded_list.append(ind)
-        indicator_list = expanded_list
-        
-        report_lines = [f"## {original_ticker} 技术指标分析", f"日期范围: {start_date} 至 {end_date}", ""]
-        
-        # 获取最近的数据（最后一行）
-        latest_date = df.index[-1] if isinstance(df.index, pd.DatetimeIndex) else df['date'].iloc[-1]
-        report_lines.append(f"### 最新数据 ({latest_date})")
-        report_lines.append(f"收盘价: {stock['close'].iloc[-1]:.2f}")
-        
-        for ind in indicator_list:
-            try:
-                # 计算指标
-                series = stock[ind]
-                val = series.iloc[-1]
-                
-                # 格式化输出
-                val_str = f"{val:.4f}" if isinstance(val, (int, float)) else str(val)
-                
-                # 添加简单的趋势判断 (基于最后两天的变化)
-                trend = ""
-                if len(series) >= 2:
-                    prev_val = series.iloc[-2]
-                    if isinstance(val, (int, float)) and isinstance(prev_val, (int, float)):
-                        if val > prev_val: trend = "↑"
-                        elif val < prev_val: trend = "↓"
-                        else: trend = "-"
-                
-                report_lines.append(f"- **{ind}**: {val_str} {trend}")
-                
-                # 对于某些指标，提供额外信息
-                if 'rsi' in ind:
-                    status = "中性"
-                    if val > 70: status = "超买 ⚠️"
-                    elif val < 30: status = "超卖 💎"
-                    report_lines.append(f"  - 状态: {status}")
-                elif 'macd' in ind and ind == 'macd':
-                    # MACD 包含 macd, macds (signal), macdh (hist)
-                    macds = stock['macds'].iloc[-1]
-                    macdh = stock['macdh'].iloc[-1]
-                    report_lines.append(f"  - Signal: {macds:.4f}")
-                    report_lines.append(f"  - Hist: {macdh:.4f}")
-                    if macdh > 0 and stock['macdh'].iloc[-2] <= 0:
-                        report_lines.append(f"  - 信号: 金叉（正向动能信号）📈")
-                    elif macdh < 0 and stock['macdh'].iloc[-2] >= 0:
-                        report_lines.append(f"  - 信号: 死叉（负向动能信号）📉")
-
-            except Exception as e:
-                report_lines.append(f"- {ind}: 计算失败 ({e})")
-        
-        return "\n".join(report_lines)
+        return format_technical_indicators(df, original_ticker, indicators, start_date, end_date)
 
     except Exception as e:
         logger.error(f"技术指标计算失败: {e}", exc_info=True)
         return f"❌ 技术指标计算发生错误: {str(e)}"
+
+
+def format_technical_indicators(df, original_ticker, indicators, start_date, end_date):
+    # 6. 计算指标 (使用 stockstats)
+    from stockstats import wrap
+
+    # 确保列名符合 stockstats 要求 (open, high, low, close, volume)
+    # 我们的 get_daily_data 应该已经标准化了列名，但为了保险再次检查
+    df.columns = [c.lower() for c in df.columns]
+
+    # stockstats 需要 Date 列作为索引或列?
+    # wrap() 通常接受 DataFrame
+    stock = wrap(df)
+
+    indicator_list = [i.strip() for i in indicators.split(',')]
+
+    # 扩展简写指标
+    expanded_list = []
+    for ind in indicator_list:
+        if ind.lower() == 'kdj':
+            expanded_list.extend(['kdjk', 'kdjd', 'kdjj'])
+        else:
+            expanded_list.append(ind)
+    indicator_list = expanded_list
+
+    report_lines = [f"## {original_ticker} 技术指标分析", f"日期范围: {start_date} 至 {end_date}", ""]
+
+    # 获取最近的数据（最后一行）
+    latest_date = df.index[-1] if isinstance(df.index, pd.DatetimeIndex) else df['date'].iloc[-1]
+    report_lines.append(f"### 最新数据 ({latest_date})")
+    report_lines.append(f"收盘价: {stock['close'].iloc[-1]:.2f}")
+
+    for ind in indicator_list:
+        try:
+            # 计算指标
+            series = stock[ind]
+            val = series.iloc[-1]
+
+            # 格式化输出
+            val_str = f"{val:.4f}" if isinstance(val, (int, float)) else str(val)
+
+            # 添加简单的趋势判断 (基于最后两天的变化)
+            trend = ""
+            if len(series) >= 2:
+                prev_val = series.iloc[-2]
+                if isinstance(val, (int, float)) and isinstance(prev_val, (int, float)):
+                    if val > prev_val: trend = "↑"
+                    elif val < prev_val: trend = "↓"
+                    else: trend = "-"
+
+            report_lines.append(f"- **{ind}**: {val_str} {trend}")
+
+            # 对于某些指标，提供额外信息
+            if 'rsi' in ind:
+                status = "中性"
+                if val > 70: status = "超买 ⚠️"
+                elif val < 30: status = "超卖 💎"
+                report_lines.append(f"  - 状态: {status}")
+            elif 'macd' in ind and ind == 'macd':
+                # MACD 包含 macd, macds (signal), macdh (hist)
+                macds = stock['macds'].iloc[-1]
+                macdh = stock['macdh'].iloc[-1]
+                report_lines.append(f"  - Signal: {macds:.4f}")
+                report_lines.append(f"  - Hist: {macdh:.4f}")
+                if len(stock) > 1 and macdh > 0 and stock['macdh'].iloc[-2] <= 0:
+                    report_lines.append(f"  - 信号: 金叉（正向动能信号）📈")
+                elif len(stock) > 1 and macdh < 0 and stock['macdh'].iloc[-2] >= 0:
+                    report_lines.append(f"  - 信号: 死叉（负向动能信号）📉")
+
+        except Exception as e:
+            report_lines.append(f"- {ind}: 计算失败 ({e})")
+
+    return "\n".join(report_lines)

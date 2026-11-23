@@ -10,7 +10,7 @@ from typing import Annotated
 from langchain_core.tools import tool
 
 from core.tools.base import register_tool
-from core.tools.context import get_current_analysis_data_source
+from core.tools.context import get_current_analysis_data_source, research_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,7 @@ def get_index_data(
     except Exception as e:
         logger.error(f"获取指数数据失败: {e}")
         # Tushare 失败时尝试 QMT 降级
-        if _is_qmt_available():
+        if research_snapshot.get() is None and _is_qmt_available():
             logger.info("Tushare 获取指数数据失败，尝试 QMT 降级")
             return _qmt_fallback_index_trend(trade_date, lookback_days)
         return f"❌ 获取指数数据失败: {e}"
@@ -252,7 +252,7 @@ def get_market_breadth(
     except Exception as e:
         logger.error(f"获取市场宽度失败: {e}")
         # Tushare 失败时尝试 QMT 降级
-        if _is_qmt_available():
+        if research_snapshot.get() is None and _is_qmt_available():
             logger.info("Tushare 获取市场宽度失败，尝试 QMT 降级")
             return _qmt_fallback_market_breadth(trade_date)
         return f"❌ 获取市场宽度失败: {e}"

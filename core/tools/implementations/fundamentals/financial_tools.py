@@ -125,6 +125,10 @@ def _get_financial_data_from_cache_or_api(symbol: str, limit: int = 8) -> Option
     优先读 MongoDB stock_financial_data 集合，如果没有则调 Tushare API。
     返回标准化后的数据（含 raw_data.income_statement 等列表）。
     """
+    from core.tools.context import research_snapshot
+    snapshot = research_snapshot.get()
+    if snapshot is not None:
+        return snapshot.get("filing")
     code6 = str(symbol).replace('.SH', '').replace('.SZ', '').replace('.BJ', '').zfill(6)
 
     # 1. 尝试 MongoDB 缓存
@@ -240,7 +244,7 @@ def get_income_analysis(
             lines.append("")
 
         lines.append("---")
-        lines.append("*数据来源: Tushare / MongoDB 缓存*")
+        lines.append(f"*数据来源: {data.get('filing_source', 'Tushare / MongoDB 缓存')}*")
         return "\n".join(lines)
 
     except Exception as e:
@@ -355,7 +359,7 @@ def get_balance_sheet_analysis(
             lines.append("")
 
         lines.append("---")
-        lines.append("*数据来源: Tushare / MongoDB 缓存*")
+        lines.append(f"*数据来源: {data.get('filing_source', 'Tushare / MongoDB 缓存')}*")
         return "\n".join(lines)
 
     except Exception as e:
@@ -474,7 +478,7 @@ def get_cashflow_analysis(
             lines.append("")
 
         lines.append("---")
-        lines.append("*数据来源: Tushare / MongoDB 缓存*")
+        lines.append(f"*数据来源: {data.get('filing_source', 'Tushare / MongoDB 缓存')}*")
         return "\n".join(lines)
 
     except Exception as e:
