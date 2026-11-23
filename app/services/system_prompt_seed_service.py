@@ -8,7 +8,6 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List
 
-from app.core.database import get_mongo_db
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +452,8 @@ class SystemPromptSeedService:
     """确保系统默认提示词模板存在于数据库中。"""
 
     def __init__(self):
+        from app.core.database import get_mongo_db
+
         self.db = get_mongo_db()
         self.collection = self.db.prompt_templates
 
