@@ -9,6 +9,7 @@ from core.tools.context import research_snapshot
 from core.tools.registry import ToolRegistry
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from quantumn.data.etf_market_context import breadth_context, index_context, sector_context
+from quantumn.data.etf_research_feeds import FEEDS, feed_result
 from quantumn.data.etf_research_facts import lookup, price_breaks, price_series
 
 MODULES = {
@@ -25,12 +26,12 @@ WINDOWS = {"close_5_sma": 5, "close_10_sma": 10, "close_20_sma": 20, "rsi_14": 1
            "macd": 35, "macds": 35, "macdh": 35, "boll": 20, "boll_ub": 20, "boll_lb": 20}
 MARKET_CONTEXT_TOOLS = {"get_index_data", "get_market_breadth", "get_sector_daily_tool"}
 ROLE_TOOLS = {
-    "etf_analyst_v2": ("lookup_market", "get_etf_fundamentals"),
+    "etf_analyst_v2": ("lookup_market", "get_etf_fundamentals", "get_research_feed"),
     "market_analyst_v2": ("lookup_market", "get_technical_indicators", "get_market_breadth"),
-    "news_analyst_v2": ("lookup_news", *NEWS),
+    "news_analyst_v2": ("lookup_news", *NEWS, "get_research_feed"),
     "index": ("lookup_market", "get_index_data", "get_market_breadth"),
     "sector": ("get_sector_daily_tool", *NEWS),
-    "financials": ("lookup_filing", *FILINGS, *NEWS),
+    "financials": ("lookup_filing", *FILINGS, *NEWS, "get_research_feed"),
     "sentiment": (*NEWS, "get_market_breadth"),
 }
 DESCRIPTIONS = {
@@ -74,26 +75,36 @@ class ResearchTools:
         for name, description in DESCRIPTIONS.items():
             self.schemas[name] = {"type": "function", "function": {"name": name, "description": description,
                 "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}}
+        self.schemas["get_research_feed"] = {"type": "function", "function": {
+            "name": "get_research_feed", "description": "按渠道查 ETF 行情、净值、新闻、财务指标或海外公司资讯。",
+            "parameters": {"type": "object", "required": ["feed"], "properties": {
+                "feed": {"type": "string", "enum": list(FEEDS), "description": "；".join(FEEDS.values())},
+                "symbol": {"type": "string", "description": "海外新闻必须填写产业链公司代码，如 NVDA。"}}}}}
 
     def names(self, role):
+        if role == "joint_research":
+            return list(dict.fromkeys(name for names in ROLE_TOOLS.values() for name in names))
         return list(ROLE_TOOLS.get(role, ()))
 
     def preflight(self, role):
-        ticker = self.bundle["ticker"]
+        return self.default_query(role, self.bundle["ticker"], self.day)
+
+    @staticmethod
+    def default_query(role, ticker, day):
         if role == "etf_analyst_v2":
-            return "get_etf_fundamentals", dict(ticker=ticker, curr_date=self.day)
+            return "get_etf_fundamentals", dict(ticker=ticker, curr_date=day)
         if role == "market_analyst_v2":
             return "get_technical_indicators", dict(ticker=ticker, indicators="close_5_sma,close_20_sma,rsi_14")
         if role == "news_analyst_v2":
-            return "get_stock_news_headlines_unified", dict(ticker=ticker, curr_date=self.day)
+            return "get_stock_news_headlines_unified", dict(ticker=ticker, curr_date=day)
         if role == "index":
-            return "get_index_data", dict(trade_date=self.day)
+            return "get_index_data", dict(trade_date=day)
         if role == "sentiment":
-            return "get_market_breadth", dict(trade_date=self.day)
+            return "get_market_breadth", dict(trade_date=day)
         # These are broad industry comparators; they do not replace each fund's tracking index.
         sector = {"588170": "半导体", "515050": "通信设备"}.get(ticker)
         if role == "sector" and sector:
-            return "get_sector_daily_tool", dict(sector_name=sector, trade_date=self.day)
+            return "get_sector_daily_tool", dict(sector_name=sector, trade_date=day)
         return None
 
     def market_context(self, name, args):
@@ -172,6 +183,8 @@ class ResearchTools:
     def invoke(self, role, name, args):
         if name not in self.names(role) or not isinstance(args, dict):
             raise ValueError("该角色没有申请的工具")
+        if name == "get_research_feed":
+            return feed_result(self.bundle, args)
         if name in DESCRIPTIONS:
             query = args["query"]
             if not isinstance(query, str) or len(query) > 128:
